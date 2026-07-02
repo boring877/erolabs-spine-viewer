@@ -1,0 +1,24 @@
+{
+  "name": "zonenova-spine-viewer",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Desktop viewer for Zone Nova Spine character animations",
+  "type": "module",
+  "scripts": {
+    "dev:renderer": "vite",
+    "dev": "tauri dev",
+    "build": "vite build",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.10.1",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.10.1",
+    "@vitejs/plugin-react": "^5.0.0",
+    "vite": "^6.3.0"
+  }
+}

@@ -1,0 +1,26 @@
+[package]
+name = "zonenova-spine-viewer"
+version = "0.1.0"
+edition = "2021"
+
+[package.metadata.tauri]
+targets = ["x86_64-pc-windows-msvc"]
+
+[package.metadata.tauri-winres]
+window_icon_path = "icons/icon.ico"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["devtools"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Minimal HTTP server to serve Spine assets (.skel/.atlas/.png) to the web
+# player running in the webview. The Spine player fetches assets via URL, so we
+# need a real localhost HTTP origin (custom protocols break its relative-URL
+# texture resolution). tiny_http is ~1 dependency and fits perfectly.
+tiny_http = "0.12"
+
+[features]
+custom-protocol = ["tauri/custom-protocol"]
