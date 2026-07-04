@@ -28,6 +28,12 @@ fn games() -> Vec<(&'static str, &'static str, PathBuf, PathBuf)> {
             PathBuf::from("D:\\SINPhantom\\output\\spine"),
             PathBuf::from("D:\\SINPhantom\\output\\images"),
         ),
+        (
+            "starlust",
+            "Star Lust",
+            PathBuf::from("D:\\StarLust\\output\\spine"),
+            PathBuf::from("D:\\StarLust\\output\\images"),
+        ),
     ]
 }
 
