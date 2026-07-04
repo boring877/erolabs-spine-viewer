@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Zone Nova Spine Viewer",
-  "version": "0.1.0",
-  "identifier": "com.zonenova.spineviewer",
+  "productName": "Erolabs Spine Viewer",
+  "version": "0.2.0",
+  "identifier": "com.erolabs.spineviewer",
   "build": {
     "beforeDevCommand": "npm run dev:renderer",
     "beforeBuildCommand": "npm run build",
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Zone Nova Spine Viewer",
+        "title": "Erolabs Spine Viewer",
         "width": 1280,
         "height": 840,
         "minWidth": 960,

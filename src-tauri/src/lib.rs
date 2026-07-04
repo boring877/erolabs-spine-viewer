@@ -1,37 +1,63 @@
-// Zone Nova Spine Viewer - Tauri backend.
+// Erolabs Spine Viewer - Tauri backend (multi-game).
 //
-// Embeds a tiny HTTP server that serves the extracted Spine animations
-// (output/spine/<id>/{skel,atlas,png}) on 127.0.0.1:<port>. The frontend's
-// Spine web player fetches assets via URL from this server - the same pattern
-// that works in serve_spine.py, moved into Rust.
+// Embeds one tiny_http server per game, each serving that game's extracted
+// Spine animations (output/spine/<id>/{skel,atlas,png}) on its own localhost
+// port. The frontend's Spine web player fetches assets from the selected
+// game's server URL.
 
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use tauri::{Manager, State};
 
-/// Where the extractor wrote the clean Spine assets.
-/// The viewer reads from the sibling `output/spine/` of the extractor repo.
-fn spine_dir() -> PathBuf {
-    PathBuf::from("D:\\ZoneNova\\output\\spine")
+/// All known games. Add a new game by appending one tuple here + rebuild:
+///   (id, display name, spine directory, images directory for thumbnails)
+fn games() -> Vec<(&'static str, &'static str, PathBuf, PathBuf)> {
+    vec![
+        (
+            "zonenova",
+            "Zone Nova",
+            PathBuf::from("D:\\ZoneNova\\output\\spine"),
+            PathBuf::from("D:\\ZoneNova\\output\\images"),
+        ),
+        (
+            "sinphantom",
+            "SIN Phantom",
+            PathBuf::from("D:\\SINPhantom\\output\\spine"),
+            PathBuf::from("D:\\SINPhantom\\output\\images"),
+        ),
+    ]
 }
 
 /// Find the first free localhost port starting from `base`.
 fn find_free_port(base: u16) -> Option<u16> {
-    (base..base + 100).find_map(|p| {
-        TcpListener::bind(("127.0.0.1", p)).map(|l| drop(l)).ok().map(|_| p)
+    (base..base + 200).find_map(|p| {
+        TcpListener::bind(("127.0.0.1", p))
+            .map(drop)
+            .ok()
+            .map(|_| p)
     })
 }
 
-/// App configuration sent to the frontend on startup.
+/// Per-game config sent to the frontend.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct AppConfig {
+pub struct GameInfo {
+    pub id: String,
+    pub name: String,
     pub server_base_url: String,
+    pub thumbnail_base_url: String,
     pub spine_dir: String,
     pub animations: Vec<Animation>,
     pub found: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppConfig {
+    pub games: Vec<GameInfo>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -40,6 +66,45 @@ pub struct Animation {
     pub id: String,
     pub kind: String, // "portrait" | "cg" | "other"
     pub has_png: bool,
+    pub thumbnail: Option<String>, // relative path under images dir, e.g. "hash/CharIcon_3001.png"
+}
+
+/// Find a character icon thumbnail for an animation folder name. Searches the
+/// images dir for an icon file matching the numeric character ID.
+fn find_thumbnail(anim_id: &str, img_dir: &Path) -> Option<String> {
+    // Extract the leading numeric character ID (e.g. "3001" from "3001_Chibi").
+    let char_id: String = anim_id
+        .chars()
+        .take_while(|c| c.is_ascii_digit())
+        .collect();
+    if char_id.is_empty() {
+        return None;
+    }
+    // Icon filename patterns to look for, in priority order.
+    let patterns = [
+        format!("CharIcon_{}.png", char_id),
+        format!("Player_Icon_{}.png", char_id),
+        format!("charicon_{}.png", char_id),
+        format!("charicon_{}g.png", char_id),
+        format!("player_icon_{}.png", char_id),
+    ];
+    // The images dir has hash-named subfolders; scan one level deep.
+    if let Ok(subdirs) = std::fs::read_dir(img_dir) {
+        for subdir in subdirs.flatten() {
+            let subdir_path = subdir.path();
+            if !subdir_path.is_dir() {
+                continue;
+            }
+            let subdir_name = subdir.file_name();
+            for pat in &patterns {
+                let candidate = subdir_path.join(pat);
+                if candidate.exists() {
+                    return Some(format!("{}/{}", subdir_name.to_string_lossy(), pat));
+                }
+            }
+        }
+    }
+    None
 }
 
 /// Classify an animation folder name into a display group.
@@ -53,8 +118,8 @@ fn classify(id: &str) -> &'static str {
     }
 }
 
-/// Shared state: the base URL of the embedded HTTP server (set on startup).
-pub struct ServerUrl(pub Mutex<String>);
+/// Shared state: game id -> (spine base URL, thumbnail base URL).
+pub struct ServerUrls(pub Mutex<HashMap<String, (String, String)>>);
 
 /// Map a file extension to a MIME type for HTTP responses.
 fn mime_for(ext: &str) -> &'static str {
@@ -67,7 +132,7 @@ fn mime_for(ext: &str) -> &'static str {
     }
 }
 
-/// Serve the Spine directory via tiny_http. Runs in a background thread.
+/// Serve one Spine directory via tiny_http. Runs in a background thread.
 fn spawn_server(dir: PathBuf, port: u16) {
     std::thread::spawn(move || {
         let addr = format!("127.0.0.1:{}", port);
@@ -78,14 +143,12 @@ fn spawn_server(dir: PathBuf, port: u16) {
                 return;
             }
         };
-        eprintln!("Spine asset server listening on http://{}", addr);
+        eprintln!("Spine asset server listening on http://{} ({})", addr, dir.display());
         for request in server.incoming_requests() {
-            // URL path like "/3001/3001.skel" -> serve dir/3001/3001.skel
             let url = request.url().to_string();
-            // Strip query string.
             let path_part = url.split('?').next().unwrap_or("");
-            // Normalize: prevent path traversal.
             let rel = path_part.trim_start_matches('/');
+            // Prevent path traversal.
             if rel.contains("..") {
                 let _ = request.respond(tiny_http::Response::empty(404));
                 continue;
@@ -124,8 +187,9 @@ fn spawn_server(dir: PathBuf, port: u16) {
     });
 }
 
-/// Scan the Spine directory and build the animation list.
-fn scan_animations(dir: &Path) -> Vec<Animation> {
+/// Scan a Spine directory and build the animation list. Also looks up a
+/// thumbnail (character icon) for each animation in the sibling images dir.
+fn scan_animations(dir: &Path, img_dir: &Path) -> Vec<Animation> {
     let mut out = Vec::new();
     if let Ok(entries) = std::fs::read_dir(dir) {
         for entry in entries.flatten() {
@@ -134,16 +198,19 @@ fn scan_animations(dir: &Path) -> Vec<Animation> {
                 continue;
             }
             let id = entry.file_name().to_string_lossy().to_string();
-            // Require a .skel (the defining file of a Spine animation).
             let skel = path.join(format!("{}.skel", id));
             if !skel.exists() {
                 continue;
             }
             let has_png = path.join(format!("{}.png", id)).exists();
+            // Look up a thumbnail (character icon) for this animation. The
+            // numeric character ID is extracted from the folder name.
+            let thumb = find_thumbnail(&id, img_dir);
             out.push(Animation {
                 id,
                 kind: classify(&entry.file_name().to_string_lossy()).to_string(),
                 has_png,
+                thumbnail: thumb,
             });
         }
     }
@@ -161,32 +228,67 @@ fn scan_animations(dir: &Path) -> Vec<Animation> {
     out
 }
 
-/// Frontend command: get the app config (server URL + animation list).
+/// Frontend command: get the app config (all games + their servers).
 #[tauri::command]
-fn get_app_config(state: State<'_, ServerUrl>) -> AppConfig {
-    let dir = spine_dir();
-    let base = state.0.lock().unwrap().clone();
-    let animations = scan_animations(&dir);
-    let found = dir.is_dir() && !animations.is_empty();
-    AppConfig {
-        server_base_url: base,
-        spine_dir: dir.to_string_lossy().to_string(),
-        animations,
-        found,
+fn get_app_config(state: State<'_, ServerUrls>) -> AppConfig {
+    let urls = state.0.lock().unwrap();
+    let mut game_infos = Vec::new();
+    for (id, name, dir, img_dir) in games() {
+        let found = dir.is_dir();
+        let animations = if found { scan_animations(&dir, &img_dir) } else { Vec::new() };
+        let found = found && !animations.is_empty();
+        let (server_base_url, thumbnail_base_url) =
+            urls.get(id).cloned().unwrap_or_default();
+        game_infos.push(GameInfo {
+            id: id.to_string(),
+            name: name.to_string(),
+            server_base_url,
+            thumbnail_base_url,
+            spine_dir: dir.to_string_lossy().to_string(),
+            animations,
+            found,
+        });
     }
+    AppConfig { games: game_infos }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let dir = spine_dir();
-    let port = find_free_port(8899).unwrap_or(8899);
-    let base_url = format!("http://127.0.0.1:{}", port);
-
-    // Start the asset server in the background before the window opens.
-    spawn_server(dir, port);
+    // Start one spine HTTP server + one thumbnail HTTP server per game.
+    let mut urls: HashMap<String, (String, String)> = HashMap::new();
+    let mut next_port: u16 = 8899;
+    for (id, _name, dir, img_dir) in games() {
+        if !dir.is_dir() {
+            eprintln!("Skipping server for '{}': {} not found", id, dir.display());
+            continue;
+        }
+        let spine_url = match find_free_port(next_port) {
+            Some(port) => {
+                spawn_server(dir, port);
+                next_port = port + 1;
+                format!("http://127.0.0.1:{}", port)
+            }
+            None => String::new(),
+        };
+        // Thumbnail server: serves the game's images/ dir so the sidebar can
+        // show character icons. Falls back to the spine server if no image dir.
+        let thumb_url = if img_dir.is_dir() {
+            match find_free_port(next_port) {
+                Some(port) => {
+                    spawn_server(img_dir, port);
+                    next_port = port + 1;
+                    format!("http://127.0.0.1:{}", port)
+                }
+                None => spine_url.clone(),
+            }
+        } else {
+            spine_url.clone()
+        };
+        urls.insert(id.to_string(), (spine_url, thumb_url));
+    }
 
     tauri::Builder::default()
-        .manage(ServerUrl(Mutex::new(base_url)))
+        .manage(ServerUrls(Mutex::new(urls)))
         .setup(|app| {
             let window = app.get_webview_window("main").unwrap();
             std::thread::spawn(move || {

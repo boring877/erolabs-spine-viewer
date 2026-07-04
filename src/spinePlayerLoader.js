@@ -23,10 +23,15 @@ export function loadSpinePlayer() {
       "https://cdn.jsdelivr.net/npm/@esotericsoftware/spine-player@4.1.52/dist/iife/spine-player.js";
     script.onload = () => {
       if (window.spine && window.spine.SpinePlayer) resolve(window.spine);
-      else reject(new Error("Spine player loaded but global not found"));
+      else {
+        loadPromise = null; // allow retry
+        reject(new Error("Spine player loaded but global not found"));
+      }
     };
-    script.onerror = () =>
+    script.onerror = () => {
+      loadPromise = null; // allow retry on transient CDN failure
       reject(new Error("Failed to load Spine player from CDN"));
+    };
     document.head.appendChild(script);
   });
   return loadPromise;
