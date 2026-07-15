@@ -13,27 +13,12 @@ use std::sync::Mutex;
 use tauri::{Manager, State};
 
 /// All known games. Add a new game by appending one tuple here + rebuild:
-///   (id, display name, spine directory, images directory for thumbnails)
-fn games() -> Vec<(&'static str, &'static str, PathBuf, PathBuf)> {
+///   (id, display name, spine dir, images dir, spine major.minor version)
+fn games() -> Vec<(&'static str, &'static str, PathBuf, PathBuf, &'static str)> {
     vec![
-        (
-            "zonenova",
-            "Zone Nova",
-            PathBuf::from("D:\\ZoneNova\\output\\spine"),
-            PathBuf::from("D:\\ZoneNova\\output\\images"),
-        ),
-        (
-            "sinphantom",
-            "SIN Phantom",
-            PathBuf::from("D:\\SINPhantom\\output\\spine"),
-            PathBuf::from("D:\\SINPhantom\\output\\images"),
-        ),
-        (
-            "starlust",
-            "Star Lust",
-            PathBuf::from("D:\\StarLust\\output\\spine"),
-            PathBuf::from("D:\\StarLust\\output\\images"),
-        ),
+        ("zonenova", "Zone Nova", PathBuf::from("D:\\ZoneNova\\output\\spine"), PathBuf::from("D:\\ZoneNova\\output\\images"), "4.1"),
+        ("sinphantom", "SIN Phantom", PathBuf::from("D:\\SINPhantom\\output\\spine"), PathBuf::from("D:\\SINPhantom\\output\\images"), "4.1"),
+        ("starlust", "Star Lust", PathBuf::from("D:\\StarLust\\output\\spine"), PathBuf::from("D:\\StarLust\\output\\images"), "4.0"),
     ]
 }
 
@@ -56,6 +41,7 @@ pub struct GameInfo {
     pub server_base_url: String,
     pub thumbnail_base_url: String,
     pub spine_dir: String,
+    pub spine_version: String,
     pub animations: Vec<Animation>,
     pub found: bool,
 }
@@ -209,12 +195,10 @@ fn scan_animations(dir: &Path, img_dir: &Path) -> Vec<Animation> {
                 continue;
             }
             let has_png = path.join(format!("{}.png", id)).exists();
-            // Look up a thumbnail (character icon) for this animation. The
-            // numeric character ID is extracted from the folder name.
             let thumb = find_thumbnail(&id, img_dir);
             out.push(Animation {
+                kind: classify(&id).to_string(),
                 id,
-                kind: classify(&entry.file_name().to_string_lossy()).to_string(),
                 has_png,
                 thumbnail: thumb,
             });
@@ -239,7 +223,7 @@ fn scan_animations(dir: &Path, img_dir: &Path) -> Vec<Animation> {
 fn get_app_config(state: State<'_, ServerUrls>) -> AppConfig {
     let urls = state.0.lock().unwrap();
     let mut game_infos = Vec::new();
-    for (id, name, dir, img_dir) in games() {
+    for (id, name, dir, img_dir, spine_ver) in games() {
         let found = dir.is_dir();
         let animations = if found { scan_animations(&dir, &img_dir) } else { Vec::new() };
         let found = found && !animations.is_empty();
@@ -251,6 +235,7 @@ fn get_app_config(state: State<'_, ServerUrls>) -> AppConfig {
             server_base_url,
             thumbnail_base_url,
             spine_dir: dir.to_string_lossy().to_string(),
+            spine_version: spine_ver.to_string(),
             animations,
             found,
         });
@@ -263,7 +248,7 @@ pub fn run() {
     // Start one spine HTTP server + one thumbnail HTTP server per game.
     let mut urls: HashMap<String, (String, String)> = HashMap::new();
     let mut next_port: u16 = 8899;
-    for (id, _name, dir, img_dir) in games() {
+    for (id, _name, dir, img_dir, _spine_ver) in games() {
         if !dir.is_dir() {
             eprintln!("Skipping server for '{}': {} not found", id, dir.display());
             continue;
@@ -296,12 +281,13 @@ pub fn run() {
     tauri::Builder::default()
         .manage(ServerUrls(Mutex::new(urls)))
         .setup(|app| {
-            let window = app.get_webview_window("main").unwrap();
-            std::thread::spawn(move || {
-                std::thread::sleep(std::time::Duration::from_millis(600));
-                let _ = window.show();
-                let _ = window.set_focus();
-            });
+            if let Some(window) = app.get_webview_window("main") {
+                std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_millis(600));
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                });
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![get_app_config])

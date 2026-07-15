@@ -11,10 +11,9 @@ import { loadSpinePlayer } from "../spinePlayerLoader.js";
 //   1. cancels the player's rAF loop (best-effort),
 //   2. forces WebGL context loss via WEBGL_lose_context on the canvas,
 //   3. clears the DOM.
-export default function SpineCanvas({ id, baseUrl, backgroundColor, zoom }) {
+export default function SpineCanvas({ id, baseUrl, backgroundColor, zoom, spineVersion = "4.1" }) {
   const mountRef = useRef(null);
   const playerRef = useRef(null);
-  const rafRef = useRef(null);
   const [status, setStatus] = useState("loading");
   const [localZoom, setLocalZoom] = useState(zoom || 1);
   const localZoomRef = useRef(localZoom);
@@ -47,8 +46,18 @@ export default function SpineCanvas({ id, baseUrl, backgroundColor, zoom }) {
     let cancelled = false;
     setStatus("loading");
 
-    loadSpinePlayer()
-      .then((spine) => {
+    // Detect whether the skeleton is JSON or binary by fetching its first byte.
+    // JSON skeletons start with '{'; binary skeletons start with a hash string.
+    const skelUrl = `${baseUrl}/${id}/${id}.skel`;
+    const atlasUrl = `${baseUrl}/${id}/${id}.atlas`;
+
+    fetch(skelUrl)
+      .then((r) => r.text())
+      .then((text) => {
+        const isJson = text.trimStart().startsWith("{");
+        return loadSpinePlayer(spineVersion).then((spine) => ({ spine, isJson }));
+      })
+      .then(({ spine, isJson }) => {
         if (cancelled || !mountRef.current) return;
         mountRef.current.innerHTML = "";
         const mount = document.createElement("div");
@@ -56,9 +65,8 @@ export default function SpineCanvas({ id, baseUrl, backgroundColor, zoom }) {
         mount.style.height = "100%";
         mountRef.current.appendChild(mount);
 
-        playerRef.current = new spine.SpinePlayer(mount, {
-          skelUrl: `${baseUrl}/${id}/${id}.skel`,
-          atlasUrl: `${baseUrl}/${id}/${id}.atlas`,
+        const config = {
+          atlasUrl,
           alpha: true,
           premultipliedAlpha: false,
           mipmaps: false,
@@ -72,7 +80,14 @@ export default function SpineCanvas({ id, baseUrl, backgroundColor, zoom }) {
             console.error("Spine load failed", err);
             if (!cancelled) setStatus("error");
           },
-        });
+        };
+        // Use jsonUrl for JSON skeletons, skelUrl for binary.
+        if (isJson) {
+          config.jsonUrl = skelUrl;
+        } else {
+          config.skelUrl = skelUrl;
+        }
+        playerRef.current = new spine.SpinePlayer(mount, config);
       })
       .catch((err) => {
         console.error(err);
@@ -83,15 +98,10 @@ export default function SpineCanvas({ id, baseUrl, backgroundColor, zoom }) {
       cancelled = true;
       disposePlayer();
     };
-  }, [id, baseUrl, backgroundColor]);
+  }, [id, baseUrl, backgroundColor, spineVersion]);
 
   // Release the previous player's WebGL context + DOM to avoid context leaks.
   function disposePlayer() {
-    // Cancel any rAF loop the player started.
-    if (rafRef.current) {
-      cancelAnimationFrame(rafRef.current);
-      rafRef.current = null;
-    }
     // Force-release the WebGL context so the browser frees the slot.
     const mount = mountRef.current;
     if (mount) {

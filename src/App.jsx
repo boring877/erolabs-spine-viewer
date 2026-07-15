@@ -86,6 +86,7 @@ export default function App() {
               baseUrl={selectedGame.serverBaseUrl}
               backgroundColor={settings.backgroundColor}
               zoom={settings.defaultZoom}
+              spineVersion={selectedGame.spineVersion}
             />
           ) : (
             <div className="viewer-empty">

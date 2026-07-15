@@ -7,7 +7,6 @@ const DEFAULTS = {
   backgroundColor: "#1a1a2e",
   defaultZoom: 1.0,
   showThumbnails: true,
-  sidebarWidth: 260,
 };
 
 export function loadSettings() {

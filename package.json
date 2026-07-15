@@ -1,8 +1,8 @@
 {
-  "name": "zonenova-spine-viewer",
-  "version": "0.1.0",
+  "name": "erolabs-spine-viewer",
+  "version": "0.3.2",
   "private": true,
-  "description": "Desktop viewer for Zone Nova Spine character animations",
+  "description": "Desktop viewer for Erolabs Spine character animations (Zone Nova, SIN Phantom, Star Lust)",
   "type": "module",
   "scripts": {
     "dev:renderer": "vite",
