@@ -107,6 +107,7 @@ export default function ControlsPanel({
             value={settings.backgroundColor}
             onChange={(e) => onUpdateSettings({ backgroundColor: e.target.value })}
           />
+          <span className="ctrl-setting-value">{settings.backgroundColor}</span>
         </div>
         <div className="ctrl-setting">
           <label>Default zoom</label>
@@ -136,7 +137,7 @@ export default function ControlsPanel({
           <label>Thumbnails</label>
           <input
             type="checkbox"
-            checked={settings.showThumbnails}
+            checked={settings.showThumbnails ?? true}
             onChange={(e) => onUpdateSettings({ showThumbnails: e.target.checked })}
           />
         </div>

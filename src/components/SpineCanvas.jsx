@@ -135,6 +135,8 @@ export default function SpineCanvas({ id, baseUrl, backgroundColor, spineVersion
         className="spine-canvas"
         style={{ background: backgroundColor }}
       />
+      {/* Note: backgroundColor is applied via inline style so it updates
+          live without reloading the Spine player. */}
     </div>
   );
 }

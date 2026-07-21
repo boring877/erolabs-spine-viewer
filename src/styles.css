@@ -414,7 +414,6 @@ html, body, #root {
   flex: 1;
   accent-color: var(--accent);
   cursor: pointer;
-  height: 3px;
 }
 .ctrl-setting input[type="color"] {
   width: 32px;
