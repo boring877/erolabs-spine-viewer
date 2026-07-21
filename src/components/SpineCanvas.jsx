@@ -50,16 +50,22 @@ export default function SpineCanvas({ id, baseUrl, backgroundColor, spineVersion
           premultipliedAlpha: false,
           mipmaps: false,
           backgroundColor,
-          // Use the player's built-in controls for zoom/pan/viewport.
-          // This gives native-quality rendering at all zoom levels.
           showControls: true,
           preserveDrawingBuffer: true,
+          skin: "1",
           success: (player) => {
             if (cancelled) return;
             setStatus("ready");
+            // Force skin "1" if it exists, otherwise "default".
+            try {
+              const skinNames = player.skeleton?.data?.skins?.map(s => s.name) || [];
+              if (skinNames.includes("1")) {
+                player.skeleton.setSkinByName("1");
+                player.skeleton.setSlotsToSetupPose();
+              }
+            } catch (e) { /* ignore */ }
             // Extract animations from the skeleton data.
             const anims = player.skeleton?.data?.animations?.map((a) => a.name) || [];
-            // Notify parent so it can populate the right panel.
             if (onReady) onReady(player, anims);
           },
           error: (_player, msg) => {
