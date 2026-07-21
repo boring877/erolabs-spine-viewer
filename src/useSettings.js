@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 // Defaults chosen for the best out-of-box experience.
 const STORAGE_KEY = "erolabs-spine-viewer-settings";
 const DEFAULTS = {
-  backgroundColor: "#1a1a2e",
+  backgroundColor: "#2a2a2a",
   defaultZoom: 1.0,
   showThumbnails: true,
   playbackSpeed: 1.0,

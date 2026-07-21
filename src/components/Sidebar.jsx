@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { open } from "@tauri-apps/plugin-dialog";
 
 // Left sidebar: game picker, open folder button, search, grouped list.
 export default function Sidebar({
@@ -35,7 +36,14 @@ export default function Sidebar({
     if (loading) return;
     setLoading(true);
     try {
-      const gameInfo = await invoke("open_folder_dialog");
+      // Open native folder picker via JS dialog plugin.
+      const selected = await open({ directory: true, multiple: false });
+      if (!selected) {
+        setLoading(false);
+        return;
+      }
+      // Scan the selected folder via Rust backend.
+      const gameInfo = await invoke("scan_folder", { folderPath: selected });
       if (gameInfo) {
         onAddCustomGame(gameInfo);
       }

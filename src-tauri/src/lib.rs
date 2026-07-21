@@ -218,19 +218,14 @@ fn scan_animations(dir: &Path, img_dir: &Path) -> Vec<Animation> {
     out
 }
 
-/// Frontend command: open a folder picker dialog and scan the selected folder
-/// for spine files. Returns a GameInfo with the scanned animations and a
-/// server URL that serves the folder's contents.
+/// Frontend command: scan a specific folder for spine characters and start
+/// an HTTP server for it. Called AFTER the JS dialog picks the folder.
 #[tauri::command]
-fn open_folder_dialog(
-    app: tauri::AppHandle,
+fn scan_folder(
+    folder_path: String,
     state: State<'_, ServerUrls>,
 ) -> Option<GameInfo> {
-    use tauri_plugin_dialog::DialogExt;
-
-    let folder_path = app.dialog().file_picker().blocking_pick_folder()?;
-
-    let dir = PathBuf::from(folder_path.to_string());
+    let dir = PathBuf::from(&folder_path);
     if !dir.is_dir() {
         return None;
     }
@@ -246,13 +241,12 @@ fn open_folder_dialog(
     spawn_server(dir.clone(), port);
     let server_url = format!("http://127.0.0.1:{}", port);
 
-    // The thumbnail server is the same folder (no separate images dir).
     let game_id = dir
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_else(|| "custom".to_string());
 
-    // Register the server URL so the frontend can reference it.
+    // Register the server URL.
     {
         let mut urls = state.0.lock().unwrap();
         urls.insert(
@@ -267,10 +261,10 @@ fn open_folder_dialog(
             .file_name()
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_else(|| "Custom Folder".to_string()),
-        server_base_url: server_url,
+        server_base_url: server_url.clone(),
         thumbnail_base_url: server_url,
         spine_dir: dir.to_string_lossy().to_string(),
-        spine_version: "4.1".to_string(), // Default; the player auto-detects
+        spine_version: "4.1".to_string(),
         animations,
         found: true,
     })
@@ -349,7 +343,7 @@ pub fn run() {
             }
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![get_app_config, open_folder_dialog])
+        .invoke_handler(tauri::generate_handler![get_app_config, scan_folder])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
