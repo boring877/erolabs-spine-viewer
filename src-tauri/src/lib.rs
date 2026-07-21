@@ -19,6 +19,7 @@ fn games() -> Vec<(&'static str, &'static str, PathBuf, PathBuf, &'static str)> 
         ("zonenova", "Zone Nova", PathBuf::from("D:\\ZoneNova\\output\\spine"), PathBuf::from("D:\\ZoneNova\\output\\images"), "4.1"),
         ("sinphantom", "SIN Phantom", PathBuf::from("D:\\SINPhantom\\output\\spine"), PathBuf::from("D:\\SINPhantom\\output\\images"), "4.1"),
         ("starlust", "Star Lust", PathBuf::from("D:\\StarLust\\output\\spine"), PathBuf::from("D:\\StarLust\\output\\images"), "4.0"),
+        ("arkrecode", "Ark Re:code", PathBuf::from("D:\\ArkRecode\\output\\spine"), PathBuf::from("D:\\ArkRecode\\output\\images"), "4.1"),
     ]
 }
 
