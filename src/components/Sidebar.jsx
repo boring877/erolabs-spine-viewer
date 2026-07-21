@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 
-// Modern sidebar: game picker, search, grouped animation list with thumbnails.
+// Left sidebar: game picker, open folder button, search, grouped list.
 export default function Sidebar({
   games,
   selectedGameId,
@@ -10,8 +11,10 @@ export default function Sidebar({
   onSelect,
   thumbnailBaseUrl,
   showThumbnails,
+  onAddCustomGame,
 }) {
   const [query, setQuery] = useState("");
+  const [loading, setLoading] = useState(false);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -28,6 +31,21 @@ export default function Sidebar({
   const labelFor = { portrait: "Portraits", cg: "CGs", other: "Other" };
   const currentGame = games.find((g) => g.id === selectedGameId);
 
+  async function handleOpenFolder() {
+    if (loading) return;
+    setLoading(true);
+    try {
+      const gameInfo = await invoke("open_folder_dialog");
+      if (gameInfo) {
+        onAddCustomGame(gameInfo);
+      }
+    } catch (e) {
+      console.error("Failed to open folder:", e);
+    } finally {
+      setLoading(false);
+    }
+  }
+
   return (
     <aside className="sidebar">
       <div className="sidebar-header">
@@ -43,6 +61,14 @@ export default function Sidebar({
             </option>
           ))}
         </select>
+        <button
+          className={`open-folder-btn ${loading ? "loading" : ""}`}
+          onClick={handleOpenFolder}
+          disabled={loading}
+          title="Open a folder with spine files"
+        >
+          {loading ? "Loading…" : "📂 Open Folder"}
+        </button>
       </div>
       <div className="sidebar-search">
         <input
@@ -91,7 +117,7 @@ export default function Sidebar({
         {filtered.length === 0 && (
           <div className="sidebar-empty">
             {currentGame && !currentGame.found
-              ? "No data for this game."
+              ? "No data. Use 'Open Folder' to load spine files."
               : "No matches."}
           </div>
         )}

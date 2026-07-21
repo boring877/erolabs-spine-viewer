@@ -1,56 +1,31 @@
 import { useEffect, useRef, useState } from "react";
 import { loadSpinePlayer } from "../spinePlayerLoader.js";
 
-// Renders one Spine animation with zoom controls.
+// Renders one Spine character using the official web player.
 //
-// IMPORTANT: the Spine 4.1 web player exposes NO public dispose() method, but
-// every `new SpinePlayer(...)` acquires a WebGL context + starts a
-// requestAnimationFrame loop. Browsers cap ~16 live WebGL contexts, so if we
-// don't release them on character switch the viewer breaks after browsing a
-// handful of characters. Cleanup therefore:
-//   1. cancels the player's rAF loop (best-effort),
-//   2. forces WebGL context loss via WEBGL_lose_context on the canvas,
-//   3. clears the DOM.
-export default function SpineCanvas({ id, baseUrl, backgroundColor, zoom, spineVersion = "4.1" }) {
+// The player's built-in controls (showControls: true) handle zoom/pan/viewport
+// auto-fit natively — this gives the best rendering quality at all zoom levels.
+//
+// The parent receives the player instance via onReady() so it can build custom
+// animation controls in the right panel.
+//
+// WebGL context leak prevention: browsers cap ~16 contexts. On cleanup we
+// force-release via WEBGL_lose_context.
+export default function SpineCanvas({ id, baseUrl, backgroundColor, spineVersion = "4.1", onReady }) {
   const mountRef = useRef(null);
   const playerRef = useRef(null);
-  const [status, setStatus] = useState("loading");
-  const [localZoom, setLocalZoom] = useState(zoom || 1);
-  const localZoomRef = useRef(localZoom);
-
-  useEffect(() => {
-    localZoomRef.current = localZoom;
-  }, [localZoom]);
-
-  useEffect(() => {
-    setLocalZoom(zoom || 1);
-    localZoomRef.current = zoom || 1;
-  }, [id, zoom]);
-
-  function applyZoom(z) {
-    const mount = mountRef.current;
-    if (!mount) return;
-    const canvas = mount.querySelector("canvas");
-    if (canvas) {
-      canvas.style.transform = `scale(${z})`;
-      canvas.style.transformOrigin = "center center";
-    }
-  }
-
-  // Re-apply zoom whenever it changes or the player becomes ready.
-  useEffect(() => {
-    applyZoom(localZoom);
-  }, [localZoom, status]);
+  const [status, setStatus] = useState("loading"); // "loading" | "ready" | "error"
+  const [errorMsg, setErrorMsg] = useState("");
 
   useEffect(() => {
     let cancelled = false;
     setStatus("loading");
+    setErrorMsg("");
 
-    // Detect whether the skeleton is JSON or binary by fetching its first byte.
-    // JSON skeletons start with '{'; binary skeletons start with a hash string.
     const skelUrl = `${baseUrl}/${id}/${id}.skel`;
     const atlasUrl = `${baseUrl}/${id}/${id}.atlas`;
 
+    // Detect JSON vs binary skeleton by checking the first byte.
     fetch(skelUrl)
       .then((r) => r.text())
       .then((text) => {
@@ -59,6 +34,8 @@ export default function SpineCanvas({ id, baseUrl, backgroundColor, zoom, spineV
       })
       .then(({ spine, isJson }) => {
         if (cancelled || !mountRef.current) return;
+
+        // Clear any previous player.
         mountRef.current.innerHTML = "";
         const mount = document.createElement("div");
         mount.style.width = "100%";
@@ -71,87 +48,86 @@ export default function SpineCanvas({ id, baseUrl, backgroundColor, zoom, spineV
           premultipliedAlpha: false,
           mipmaps: false,
           backgroundColor,
+          // Use the player's built-in controls for zoom/pan/viewport.
+          // This gives native-quality rendering at all zoom levels.
           showControls: true,
           preserveDrawingBuffer: true,
-          success: () => {
-            if (!cancelled) setStatus("ready");
+          success: (player) => {
+            if (cancelled) return;
+            setStatus("ready");
+            // Extract animations from the skeleton data.
+            const anims = player.skeleton?.data?.animations?.map((a) => a.name) || [];
+            // Notify parent so it can populate the right panel.
+            if (onReady) onReady(player, anims);
           },
-          error: (err) => {
-            console.error("Spine load failed", err);
-            if (!cancelled) setStatus("error");
+          error: (_player, msg) => {
+            console.error("Spine load failed:", msg);
+            if (!cancelled) {
+              setStatus("error");
+              setErrorMsg(msg || "Unknown error");
+            }
           },
         };
-        // Use jsonUrl for JSON skeletons, skelUrl for binary.
+
+        // JSON skeletons use jsonUrl; binary use skelUrl.
         if (isJson) {
           config.jsonUrl = skelUrl;
         } else {
           config.skelUrl = skelUrl;
         }
+
         playerRef.current = new spine.SpinePlayer(mount, config);
       })
       .catch((err) => {
-        console.error(err);
-        if (!cancelled) setStatus("error");
+        console.error("SpineCanvas error:", err);
+        if (!cancelled) {
+          setStatus("error");
+          setErrorMsg(String(err.message || err));
+        }
       });
 
     return () => {
       cancelled = true;
       disposePlayer();
+      if (onReady) onReady(null, []);
     };
-  }, [id, baseUrl, backgroundColor, spineVersion]);
+  }, [id, baseUrl, spineVersion]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Release the previous player's WebGL context + DOM to avoid context leaks.
+  // Release the WebGL context to prevent context leaks.
   function disposePlayer() {
-    // Force-release the WebGL context so the browser frees the slot.
     const mount = mountRef.current;
-    if (mount) {
-      const canvas = mount.querySelector("canvas");
-      if (canvas) {
-        try {
-          const gl =
-            canvas.getContext("webgl2") ||
-            canvas.getContext("webgl") ||
-            canvas.getContext("experimental-webgl");
-          if (gl && gl.getExtension) {
-            const lose = gl.getExtension("WEBGL_lose_context");
-            if (lose) lose.loseContext();
-          }
-        } catch (e) {
-          /* ignore */
+    if (!mount) return;
+
+    const canvas = mount.querySelector("canvas");
+    if (canvas) {
+      try {
+        const gl =
+          canvas.getContext("webgl2") ||
+          canvas.getContext("webgl") ||
+          canvas.getContext("experimental-webgl");
+        if (gl && gl.getExtension) {
+          const lose = gl.getExtension("WEBGL_lose_context");
+          if (lose) lose.loseContext();
         }
+      } catch (e) {
+        // ignore
       }
-      mount.innerHTML = "";
     }
+    mount.innerHTML = "";
     playerRef.current = null;
   }
 
   return (
     <div className="spine-canvas-wrap">
-      <div className="spine-toolbar">
-        <span className="spine-status-chip">
-          {status === "loading" && "Loading…"}
-          {status === "ready" && id}
-          {status === "error" && "Error"}
-        </span>
-        <div className="zoom-controls">
-          <button
-            onClick={() => setLocalZoom((z) => Math.max(0.2, +(z - 0.2).toFixed(2)))}
-            title="Zoom out"
-          >
-            −
-          </button>
-          <span className="zoom-value">{Math.round(localZoom * 100)}%</span>
-          <button
-            onClick={() => setLocalZoom((z) => Math.min(5, +(z + 0.2).toFixed(2)))}
-            title="Zoom in"
-          >
-            +
-          </button>
-          <button className="zoom-reset" onClick={() => setLocalZoom(zoom || 1)}>
-            Reset
-          </button>
+      {status === "error" && (
+        <div className="spine-error-overlay">
+          <div className="spine-error-box">
+            <strong>Failed to load</strong>
+            <p>{errorMsg}</p>
+            <p className="spine-error-id">{id}</p>
+          </div>
         </div>
-      </div>
+      )}
       <div
         ref={mountRef}
         className="spine-canvas"

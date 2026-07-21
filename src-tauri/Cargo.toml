@@ -21,6 +21,7 @@ serde_json = "1"
 # need a real localhost HTTP origin (custom protocols break its relative-URL
 # texture resolution). tiny_http is ~1 dependency and fits perfectly.
 tiny_http = "0.12"
+tauri-plugin-dialog = "2.7.2"
 
 [features]
 custom-protocol = ["tauri/custom-protocol"]

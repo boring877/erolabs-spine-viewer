@@ -7,6 +7,7 @@ const DEFAULTS = {
   backgroundColor: "#1a1a2e",
   defaultZoom: 1.0,
   showThumbnails: true,
+  playbackSpeed: 1.0,
 };
 
 export function loadSettings() {

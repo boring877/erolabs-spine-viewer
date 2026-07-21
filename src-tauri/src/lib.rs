@@ -218,6 +218,64 @@ fn scan_animations(dir: &Path, img_dir: &Path) -> Vec<Animation> {
     out
 }
 
+/// Frontend command: open a folder picker dialog and scan the selected folder
+/// for spine files. Returns a GameInfo with the scanned animations and a
+/// server URL that serves the folder's contents.
+#[tauri::command]
+fn open_folder_dialog(
+    app: tauri::AppHandle,
+    state: State<'_, ServerUrls>,
+) -> Option<GameInfo> {
+    use tauri_plugin_dialog::DialogExt;
+
+    let folder_path = app.dialog().file_picker().blocking_pick_folder()?;
+
+    let dir = PathBuf::from(folder_path.to_string());
+    if !dir.is_dir() {
+        return None;
+    }
+
+    // Scan the folder for spine character subfolders.
+    let animations = scan_animations(&dir, &dir);
+    if animations.is_empty() {
+        return None;
+    }
+
+    // Start an HTTP server for this folder.
+    let port = find_free_port(8999)?;
+    spawn_server(dir.clone(), port);
+    let server_url = format!("http://127.0.0.1:{}", port);
+
+    // The thumbnail server is the same folder (no separate images dir).
+    let game_id = dir
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| "custom".to_string());
+
+    // Register the server URL so the frontend can reference it.
+    {
+        let mut urls = state.0.lock().unwrap();
+        urls.insert(
+            game_id.clone(),
+            (server_url.clone(), server_url.clone()),
+        );
+    }
+
+    Some(GameInfo {
+        id: game_id,
+        name: dir
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| "Custom Folder".to_string()),
+        server_base_url: server_url,
+        thumbnail_base_url: server_url,
+        spine_dir: dir.to_string_lossy().to_string(),
+        spine_version: "4.1".to_string(), // Default; the player auto-detects
+        animations,
+        found: true,
+    })
+}
+
 /// Frontend command: get the app config (all games + their servers).
 #[tauri::command]
 fn get_app_config(state: State<'_, ServerUrls>) -> AppConfig {
@@ -279,6 +337,7 @@ pub fn run() {
     }
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .manage(ServerUrls(Mutex::new(urls)))
         .setup(|app| {
             if let Some(window) = app.get_webview_window("main") {
@@ -290,7 +349,7 @@ pub fn run() {
             }
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![get_app_config])
+        .invoke_handler(tauri::generate_handler![get_app_config, open_folder_dialog])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
