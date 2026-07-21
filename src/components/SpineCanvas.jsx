@@ -22,8 +22,10 @@ export default function SpineCanvas({ id, baseUrl, backgroundColor, spineVersion
     setStatus("loading");
     setErrorMsg("");
 
-    const skelUrl = `${baseUrl}/${id}/${id}.skel`;
-    const atlasUrl = `${baseUrl}/${id}/${id}.atlas`;
+    // URL-encode the id to handle spaces in folder names like "4037 CG1".
+    const encodedId = encodeURIComponent(id);
+    const skelUrl = `${baseUrl}/${encodedId}/${encodedId}.skel`;
+    const atlasUrl = `${baseUrl}/${encodedId}/${encodedId}.atlas`;
 
     // Detect JSON vs binary skeleton by checking the first byte.
     fetch(skelUrl)
@@ -61,7 +63,7 @@ export default function SpineCanvas({ id, baseUrl, backgroundColor, spineVersion
             if (onReady) onReady(player, anims);
           },
           error: (_player, msg) => {
-            console.error("Spine load failed:", msg);
+            console.error("Spine load failed:", msg, "for character:", id);
             if (!cancelled) {
               setStatus("error");
               setErrorMsg(msg || "Unknown error");

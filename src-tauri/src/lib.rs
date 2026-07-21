@@ -113,6 +113,31 @@ fn classify(id: &str) -> &'static str {
 /// Shared state: game id -> (spine base URL, thumbnail base URL).
 pub struct ServerUrls(pub Mutex<HashMap<String, (String, String)>>);
 
+/// Simple URL decoder: converts %20 → space, %2F → /, etc.
+fn url_decode(s: &str) -> String {
+    let mut result = String::with_capacity(s.len());
+    let mut chars = s.chars();
+    while let Some(c) = chars.next() {
+        if c == '%' {
+            let h1 = chars.next();
+            let h2 = chars.next();
+            if let (Some(h1), Some(h2)) = (h1, h2) {
+                let hex = format!("{}{}", h1, h2);
+                if let Ok(byte) = u8::from_str_radix(&hex, 16) {
+                    result.push(byte as char);
+                    continue;
+                }
+            }
+            result.push(c);
+        } else if c == '+' {
+            result.push(' ');
+        } else {
+            result.push(c);
+        }
+    }
+    result
+}
+
 /// Map a file extension to a MIME type for HTTP responses.
 fn mime_for(ext: &str) -> &'static str {
     match ext {
@@ -140,6 +165,8 @@ fn spawn_server(dir: PathBuf, port: u16) {
             let url = request.url().to_string();
             let path_part = url.split('?').next().unwrap_or("");
             let rel = path_part.trim_start_matches('/');
+            // URL-decode the path (handles %20 for spaces in folder names like "4037 CG1").
+            let rel = url_decode(&rel);
             // Prevent path traversal.
             if rel.contains("..") {
                 let _ = request.respond(tiny_http::Response::empty(404));
